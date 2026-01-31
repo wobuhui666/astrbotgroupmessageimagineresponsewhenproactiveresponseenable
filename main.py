@@ -1,34 +1,67 @@
-from astrbot.api.all import *
-from astrbot.api.provider import ProviderRequest
+from astrbot.api.event import filter, AstrMessageEvent
+from astrbot.api.star import Context, Star, register
+from astrbot.api import logger
+from astrbot.api.message_components import Image, Plain
 
-class GroupImageEnabler(Star):
-    """群聊图片回复启用器"""
+@register("image_reply", "AstrBot", "Active reply to images in group chat", "1.0.0")
+class ImageReply(Star):
+    def __init__(self, context: Context):
+        super().__init__(context)
     
-    def __init__(self, context: Context, config: AstrBotConfig):
-        super().__init__(context, config)
-    
-    # 注意这里：必须使用 @filter.on_llm_request()
-    # 且函数必须在 class 内部
-    @filter.on_llm_request()
-    async def handle_group_image_request(self, event: AstrMessageEvent, req: ProviderRequest):
-        """处理群聊纯图片请求"""
+    @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
+    async def on_group_message(self, event: AstrMessageEvent):
+        """Handle group messages to check for images and reply if active reply is enabled."""
         
-        # 1. 检查是否是群聊消息
-        if not event.get_group_id():
+        # 1. Check if the message contains an image
+        has_image = False
+        for component in event.message_obj.message:
+            if isinstance(component, Image):
+                has_image = True
+                break
+        
+        if not has_image:
             return
 
-        # 2. 检查 Prompt 是否为空（即没有文字）
-        if not req.prompt:
-            # 3. 检查是否包含图片
-            if req.image_urls and len(req.image_urls) > 0:
-                # 4. 修改 Prompt，添加占位符，强制触发 LLM 识图
-                req.prompt = "请分析这张图片。" 
-                
-                # 打印日志方便调试
-                self.context.logger.info(f"群聊 {event.get_group_id()} 收到纯图片，已添加占位符触发回复。")
+        # 2. Check if active reply is enabled in the configuration
+        # Logic borrowed from astrbot/builtin_stars/astrbot/main.py
+        ltmse = self.context.get_config(umo=event.unified_msg_origin).get("provider_ltm_settings", {})
+        active_reply_config = ltmse.get("active_reply", {})
+        
+        if not active_reply_config.get("enable", False):
+            return
 
-    async def initialize(self):
-        self.context.logger.info("群聊图片插件已加载")
-    
-    async def terminate(self):
-        self.context.logger.info("群聊图片插件已卸载")
+        # 3. Check whitelist (if applicable, though active reply usually implies checking this)
+        # Note: 'astrbot/builtin_stars/astrbot/long_term_memory.py' has whitelist logic.
+        # We should probably respect it to be consistent.
+        whitelist = active_reply_config.get("whitelist", [])
+        if whitelist:
+             if event.unified_msg_origin not in whitelist and \
+                (event.get_group_id() and event.get_group_id() not in whitelist):
+                return
+
+        # 4. Request LLM to reply
+        # We bypass the probability check as per user request (implied "always reply to images")
+        
+        provider = self.context.get_using_provider(event.unified_msg_origin)
+        if not provider:
+            logger.error("No LLM provider found. Cannot reply to image.")
+            return
+
+        try:
+            # We use event.request_llm which handles the pipeline
+            # Use the message string as prompt (which might be empty or caption if parsed, but LLM sees the image)
+            # If the message is JUST an image, the prompt might be empty.
+            
+            prompt = event.message_str
+            if not prompt.strip():
+                prompt = "This is an image sent by a user in the group chat. Please reply to it appropriately."
+
+            # Construct the request
+            yield event.request_llm(
+                prompt=prompt,
+                func_tool_manager=self.context.get_llm_tool_manager(),
+                session_id=event.session_id
+            )
+            
+        except Exception as e:
+            logger.error(f"ImageReply plugin error: {e}")
