@@ -1,7 +1,7 @@
 from astrbot.api.all import *  
-from astrbot.core.star import Star  
+from astrbot.api.event.filter import on_llm_request  
   
-@register_on_llm_request()  
+@on_llm_request()  
 async def handle_group_image_request(event: AstrMessageEvent, req: ProviderRequest):  
     """处理群聊纯图片请求，添加占位符触发回复"""  
       
