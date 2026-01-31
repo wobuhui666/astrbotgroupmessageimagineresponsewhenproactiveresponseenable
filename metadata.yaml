@@ -1,0 +1,6 @@
+name: "group_image_enabler"  
+display_name: "群聊图片回复启用器"  
+author: "your_name"  
+desc: "让机器人在群聊中也能回复纯图片消息"  
+version: "1.0.0"  
+repo: "https://github.com/wobuhui666/astrbotgroupmessageimagineresponsewhenproactiveresponseenable"
