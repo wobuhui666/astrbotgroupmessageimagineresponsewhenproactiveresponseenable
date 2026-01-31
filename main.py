@@ -14,10 +14,18 @@ class ImageReply(Star):
         
         # 1. Check if the message contains an image
         has_image = False
+        image_urls = []
         for component in event.message_obj.message:
             if isinstance(component, Image):
                 has_image = True
-                break
+                try:
+                    # Convert to file path (handles URL downloading, base64, etc.)
+                    # This ensures we get a valid path/URL even if the platform (like QQ) 
+                    # provides it in a different format or lacks a public URL.
+                    file_path = await component.convert_to_file_path()
+                    image_urls.append(file_path)
+                except Exception as e:
+                    logger.warning(f"Failed to convert image component to file path: {e}")
         
         if not has_image:
             return
@@ -39,7 +47,7 @@ class ImageReply(Star):
                 (event.get_group_id() and event.get_group_id() not in whitelist):
                 return
 
-        # 4. Request LLM to reply
+            # 4. Request LLM to reply
         # We bypass the probability check as per user request (implied "always reply to images")
         
         provider = self.context.get_using_provider(event.unified_msg_origin)
@@ -53,14 +61,28 @@ class ImageReply(Star):
             # If the message is JUST an image, the prompt might be empty.
             
             prompt = event.message_str
-            if not prompt.strip():
+            # If prompt is empty or just contains "[Image]" placeholder, give it a better prompt
+            if not prompt.strip() or prompt.strip() == "[图片]":
                 prompt = "This is an image sent by a user in the group chat. Please reply to it appropriately."
+
+            # Get current conversation to ensure persona is used
+            session_curr_cid = await self.context.conversation_manager.get_curr_conversation_id(
+                event.unified_msg_origin,
+            )
+            conv = None
+            if session_curr_cid:
+                 conv = await self.context.conversation_manager.get_conversation(
+                    event.unified_msg_origin,
+                    session_curr_cid,
+                )
 
             # Construct the request
             yield event.request_llm(
                 prompt=prompt,
                 func_tool_manager=self.context.get_llm_tool_manager(),
-                session_id=event.session_id
+                session_id=event.session_id,
+                conversation=conv,
+                image_urls=image_urls
             )
             
         except Exception as e:
