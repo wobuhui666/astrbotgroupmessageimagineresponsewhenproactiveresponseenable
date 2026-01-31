@@ -1,5 +1,6 @@
 from astrbot.api.all import *  
 from astrbot.api.event.filter import on_llm_request  
+from astrbot.api.provider import ProviderRequest  
   
 @on_llm_request()  
 async def handle_group_image_request(event: AstrMessageEvent, req: ProviderRequest):  
