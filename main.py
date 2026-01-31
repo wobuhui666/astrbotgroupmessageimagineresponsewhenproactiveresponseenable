@@ -15,8 +15,15 @@ async def handle_group_image_request(event: AstrMessageEvent, req: ProviderReque
             logger.info(f"为群聊 {event.get_group_id()} 的纯图片添加占位符")  
   
 class GroupImageEnabler(Star):  
+    """群聊图片回复启用器"""  
+      
     def __init__(self, context: Context, config: AstrBotConfig):  
         super().__init__(context, config)  
       
     async def initialize(self):  
-        logger.info("群聊图片回复启用器已加载")
+        """插件初始化时调用"""  
+        logger.info("群聊图片回复启用器已加载")  
+      
+    async def terminate(self):  
+        """插件卸载时调用"""  
+        logger.info("群聊图片回复启用器已卸载")
